@@ -80,7 +80,7 @@ jobs:
       packages: write
     # Runs for a freshly minted tag (main merge) or a manually pushed v* tag.
     if: always() && (needs.version.outputs.tag != '' || github.ref_type == 'tag')
-    # On-prem ARC runner (GitOps cluster-core/github-runners); ephemeral, no layer cache.
+    # GitHub-hosted runner; ephemeral, no layer cache.
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.meta.outputs.version }}
@@ -148,7 +148,7 @@ jobs:
     name: Trivy scan
     needs: [build]
     if: always() && needs.build.result == 'success'
-    # On-prem ARC runner (GitOps cluster-core/github-runners); ephemeral, no layer cache.
+    # GitHub-hosted runner; ephemeral, no layer cache.
     runs-on: ubuntu-latest
     steps:
       - name: Log in to GHCR

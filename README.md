@@ -1,8 +1,8 @@
 # ntfy-image
 
 Thin in-house repackage of the upstream [ntfy](https://github.com/binwiederhier/ntfy)
-server binary. Published as `ghcr.io/rake-pro/ntfy`, replacing
-`binwiederhier/ntfy` in GitOps (`cluster-apps/ntfy`).
+server binary. Published as `ghcr.io/rake-pro/ntfy`, a drop-in replacement for
+`binwiederhier/ntfy`.
 
 ## Why this exists
 
@@ -89,49 +89,49 @@ curl -s http://localhost:8080/v1/health
 2. `release.yml` mints the next `vX.Y.Z` tag, builds+pushes
    `ghcr.io/rake-pro/ntfy:X.Y.Z` (+ `X.Y` + `latest` + `sha-<short>`) for
    `linux/amd64,linux/arm64`, then Trivy-gates on CRITICAL.
-3. Bump `cluster-apps/ntfy/values.yaml` (`image.repository` /
-   `image.tag`) in GitOps to the new tag and merge/sync.
+3. Update wherever you deploy this image (Compose file, Kubernetes manifest,
+   or Helm values) to the new tag and roll out.
 
 ## How to: roll back
 
-* GitOps side: pin `cluster-apps/ntfy/values.yaml` `image.tag` back to the
-  previous `vX.Y.Z` (or to the last `binwiederhier/ntfy` tag + repository, if
-  rolling all the way back off this image) and sync.
+* Deploy side: pin your deployment's image tag back to the previous
+  `vX.Y.Z` (or back to `binwiederhier/ntfy`, if rolling all the way off this
+  image) and re-apply.
 * Image side: no image deletion needed - GHCR keeps every pushed tag. A
   broken release just gets superseded by the next patch tag.
 
-## Deploying (GitOps side)
+## Deploying
 
-`cluster-apps/ntfy/values.yaml` needs:
+Plain `docker run`:
+
+```
+docker run -d -p 80:80 -v /var/lib/ntfy:/var/lib/ntfy ghcr.io/rake-pro/ntfy:1.0.0 serve
+```
+
+Kubernetes/Helm values (e.g. deploying this in place of the upstream chart's
+default image):
 
 ```yaml
 image:
   repository: ghcr.io/rake-pro/ntfy
   tag: "1.0.0"
-
-imagePullSecrets:
-  - name: ghcr-ntfy
 ```
 
-plus a `templates/ghcr-pull-secret.yaml` `ExternalSecret` (copy the pattern
-from `cluster-apps/gopaste/templates/ghcr-pull-secret.yaml` - same shared GSM
-key `ghcr-rakepro`, just renamed to `ghcr-ntfy`), since this is a private GHCR
-package like the rest of the fleet's `ghcr.io/rake-pro/*` images.
+The `ghcr.io/rake-pro/ntfy` package is public, so no `imagePullSecrets` are
+needed.
 
 This image runs as uid 1000 (`restricted`-profile compatible), unlike the
-current `binwiederhier/ntfy` deployment which renders `securityProfile: root`.
-Switching over should also flip `securityProfile` to `restricted` (or set an
-explicit `podSecurityContext.fsGroup: 1000` so the PVC-mounted
-`/var/lib/ntfy` is writable by uid 1000) - not required for the image to run,
-but leaving `root` after switching to a non-root image gets no benefit from
-the hardening.
+stock `binwiederhier/ntfy` image, which runs as root by default. If your
+existing deployment assumes a root filesystem owner, switch its pod security
+context to non-root/restricted (or set an explicit `fsGroup: 1000`) so any
+volume mounted at `/var/lib/ntfy` stays writable by uid 1000 - not required
+for the image to run, but leaving it root after switching to a non-root image
+gets no benefit from the hardening.
 
 ## What is NOT done here
 
 * Not pushed to GitHub, not built as a real multi-arch OCI image, no Trivy
   image scan (this container has no `docker`/`podman`/`buildah`; only a
-  `trivy` binary). See the session report for exactly what was verified
-  instead (checksum, static-binary check, binary smoke test via `ntfy serve`
-  run directly).
-* GitOps `cluster-apps/ntfy/values.yaml` change is drafted on a scratch clone,
-  committed locally only - not pushed, not synced.
+  `trivy` binary). See the checksum, static-binary check, and binary smoke
+  test (`ntfy serve` run directly) sections above for what was verified
+  instead.
