@@ -19,7 +19,7 @@ concurrency:
 jobs:
   build:
     # On-prem ARC runner (GitOps cluster-core/github-runners); ephemeral, no layer cache.
-    runs-on: arc-linux
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v7
