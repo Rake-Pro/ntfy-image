@@ -1,0 +1,13 @@
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    # Only bumps the ARG ALPINE_VERSION base tag - it cannot see the
+    # release-binary pin (ARG NTFY_VERSION / NTFY_SHA256_*); that is covered
+    # by .github/workflows/check-upstream.yml instead.

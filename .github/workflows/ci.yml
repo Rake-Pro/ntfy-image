@@ -1,0 +1,41 @@
+name: CI
+
+# No paths filters: the "build" check is required on dev -> main promotion PRs, so it
+# must exist on every dev SHA - a filtered-out push would block promotion.
+on:
+  push:
+    branches: [dev]
+  pull_request:
+    branches: [dev]
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    # On-prem ARC runner (GitOps cluster-core/github-runners); ephemeral, no layer cache.
+    runs-on: arc-linux
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      # Validation only: builds both target platforms but never pushes. Runs on
+      # every push to dev so the check lands on the SHA the dev -> main PR points at.
+      - name: Build (no push)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: false
+          provenance: false

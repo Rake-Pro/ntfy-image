@@ -1,0 +1,52 @@
+name: Check upstream ntfy release
+
+# Dependabot cannot track a GitHub Releases-only upstream (ntfy is a Go module
+# but we vendor its binary, not its source - no go.mod/Dockerfile FROM tag to
+# watch). This is the substitute: weekly, compare the pinned ARG NTFY_VERSION
+# in the Dockerfile against binwiederhier/ntfy's latest release and open (or
+# update) a tracking issue when they differ. See README.md "Bump upstream ntfy
+# version" for the manual bump steps this issue asks for.
+on:
+  schedule:
+    - cron: '30 6 * * 1'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: check-upstream
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Compare pinned vs upstream latest
+        run: |
+          set -euo pipefail
+          pinned=$(grep -m1 '^ARG NTFY_VERSION=' Dockerfile | cut -d= -f2)
+          latest=$(gh api repos/binwiederhier/ntfy/releases/latest --jq '.tag_name' | sed 's/^v//')
+
+          echo "pinned=${pinned} latest=${latest}"
+          if [ "${pinned}" = "${latest}" ]; then
+            echo "Up to date; nothing to do."
+            exit 0
+          fi
+
+          title="Bump upstream ntfy to v${latest}"
+          existing=$(gh issue list --repo "${GITHUB_REPOSITORY}" --state open --search "in:title \"${title}\"" --json number --jq '.[0].number // empty')
+          if [ -n "${existing}" ]; then
+            echo "Tracking issue #${existing} already open."
+            exit 0
+          fi
+
+          gh issue create --repo "${GITHUB_REPOSITORY}" \
+            --title "${title}" \
+            --body "$(printf 'Upstream binwiederhier/ntfy released v%s (currently pinned: v%s).\n\nSee README.md "Bump upstream ntfy version" for the steps: update ARG NTFY_VERSION and the two NTFY_SHA256_* build args in Dockerfile against upstream'"'"'s checksums.txt for the release, then open a PR to dev.\n\nRelease notes: https://github.com/binwiederhier/ntfy/releases/tag/v%s' "${latest}" "${pinned}" "${latest}")"
