@@ -1,8 +1,8 @@
 # ntfy-image
 
 Thin in-house repackage of the upstream [ntfy](https://github.com/binwiederhier/ntfy)
-server binary. Published as `ghcr.io/rake-pro/ntfy`, replacing
-`binwiederhier/ntfy` in GitOps (`cluster-apps/ntfy`).
+server binary. Published as `ghcr.io/rake-pro/ntfy`, a drop-in replacement for
+`binwiederhier/ntfy`.
 
 ## Why this exists
 
@@ -16,21 +16,21 @@ server binary. Published as `ghcr.io/rake-pro/ntfy`, replacing
 * No source build: upstream's own Linux release binaries are already
   statically linked (`CGO_ENABLED=1`, `-extldflags=-static`, for
   `go-sqlite3`), confirmed via `file`/`ldd` against the v2.28.0
-  `linux_amd64` tarball - they run unmodified on musl/alpine.
+  `linux_amd64` tarball: they run unmodified on musl/alpine.
 
 ## Version scheme
 
 | | |
 |---|---|
-| Image tag | Our own plain semver `vX.Y.Z` (fleet standard: no upstream version or build-hash suffix in the tag) |
+| Image tag | Our own plain semver `X.Y.Z` (fleet standard: no upstream version or build-hash suffix in the tag). The git release tag carries a `v` prefix (`vX.Y.Z`); the published Docker tag drops it. |
 | Upstream version | Recorded as `ARG NTFY_VERSION` in `Dockerfile`, the `io.rake-pro.upstream-version` OCI label, and the release notes |
-| Why not `v2.28.0`-style tags | The owner's semver standard bans build-suffixed tags; an upstream-derived tag would also break the moment we need to rebuild for OUR reasons (e.g. an alpine CVE) without an upstream bump - there'd be no next tag to mint |
-| First release | `v1.0.0` = alpine `3.24.2` + ntfy `2.28.0` |
+| Why not `v2.28.0`-style tags | The owner's semver standard bans build-suffixed tags; an upstream-derived tag would also break the moment we need to rebuild for OUR reasons (e.g. an alpine CVE) without an upstream bump, since there would be no next tag to mint |
+| First release | git tag `v1.0.0` -> image tags `1.0.0` / `1.0` / `latest` = alpine `3.24.2` + ntfy `2.28.0` |
 
 Bumping alpine alone (security rebuild, no upstream change) is a patch.
 Bumping the pinned `NTFY_VERSION` is a patch/minor per normal semver judgment
 (patch for a routine upstream patch release, minor if upstream ships a new
-feature you want to call out) - use the `release:minor` / `release:major` PR
+feature you want to call out); use the `release:minor` / `release:major` PR
 label to override the default patch bump, same as every other Rake-Pro image
 repo.
 
@@ -78,7 +78,7 @@ curl -s http://localhost:8080/v1/health
 4. Build locally (above) to confirm the checksum verification passes and
    `/v1/health` responds.
 5. Open a PR into `dev`. `check-upstream.yml` opens a tracking issue
-   automatically when it notices upstream is ahead - this is the same
+   automatically when it notices upstream is ahead; this is the same
    procedure that issue asks for.
 
 ## How to: release
@@ -89,49 +89,46 @@ curl -s http://localhost:8080/v1/health
 2. `release.yml` mints the next `vX.Y.Z` tag, builds+pushes
    `ghcr.io/rake-pro/ntfy:X.Y.Z` (+ `X.Y` + `latest` + `sha-<short>`) for
    `linux/amd64,linux/arm64`, then Trivy-gates on CRITICAL.
-3. Bump `cluster-apps/ntfy/values.yaml` (`image.repository` /
-   `image.tag`) in GitOps to the new tag and merge/sync.
+3. Update wherever you deploy this image (Compose file, Kubernetes manifest,
+   or Helm values) to the new tag and roll out.
 
 ## How to: roll back
 
-* GitOps side: pin `cluster-apps/ntfy/values.yaml` `image.tag` back to the
-  previous `vX.Y.Z` (or to the last `binwiederhier/ntfy` tag + repository, if
-  rolling all the way back off this image) and sync.
-* Image side: no image deletion needed - GHCR keeps every pushed tag. A
+* Deploy side: pin your deployment's image tag back to the previous
+  `X.Y.Z` (or back to `binwiederhier/ntfy`, if rolling all the way off this
+  image) and re-apply.
+* Image side: no image deletion needed, since GHCR keeps every pushed tag. A
   broken release just gets superseded by the next patch tag.
 
-## Deploying (GitOps side)
+## Deploying
 
-`cluster-apps/ntfy/values.yaml` needs:
+This image runs as uid 1000 and listens on an unprivileged port, so
+`NTFY_LISTEN_HTTP` must be set to something other than upstream's default
+`:80`.
+
+Plain `docker run`:
+
+```
+docker run -d -p 8080:8080 -e NTFY_LISTEN_HTTP=:8080 \
+  -v /var/lib/ntfy:/var/lib/ntfy ghcr.io/rake-pro/ntfy:1.0.0 serve
+```
+
+Kubernetes/Helm values (e.g. deploying this in place of the upstream chart's
+default image):
 
 ```yaml
 image:
   repository: ghcr.io/rake-pro/ntfy
   tag: "1.0.0"
-
-imagePullSecrets:
-  - name: ghcr-ntfy
 ```
 
-plus a `templates/ghcr-pull-secret.yaml` `ExternalSecret` (copy the pattern
-from `cluster-apps/gopaste/templates/ghcr-pull-secret.yaml` - same shared GSM
-key `ghcr-rakepro`, just renamed to `ghcr-ntfy`), since this is a private GHCR
-package like the rest of the fleet's `ghcr.io/rake-pro/*` images.
+The `ghcr.io/rake-pro/ntfy` package is public, so no `imagePullSecrets` are
+needed.
 
 This image runs as uid 1000 (`restricted`-profile compatible), unlike the
-current `binwiederhier/ntfy` deployment which renders `securityProfile: root`.
-Switching over should also flip `securityProfile` to `restricted` (or set an
-explicit `podSecurityContext.fsGroup: 1000` so the PVC-mounted
-`/var/lib/ntfy` is writable by uid 1000) - not required for the image to run,
-but leaving `root` after switching to a non-root image gets no benefit from
-the hardening.
-
-## What is NOT done here
-
-* Not pushed to GitHub, not built as a real multi-arch OCI image, no Trivy
-  image scan (this container has no `docker`/`podman`/`buildah`; only a
-  `trivy` binary). See the session report for exactly what was verified
-  instead (checksum, static-binary check, binary smoke test via `ntfy serve`
-  run directly).
-* GitOps `cluster-apps/ntfy/values.yaml` change is drafted on a scratch clone,
-  committed locally only - not pushed, not synced.
+stock `binwiederhier/ntfy` image, which runs as root by default. If your
+existing deployment assumes a root filesystem owner, switch its pod security
+context to non-root/restricted (or set an explicit `fsGroup: 1000`) so any
+volume mounted at `/var/lib/ntfy` stays writable by uid 1000. This is not
+required for the image to run, but leaving it root after switching to a
+non-root image gets no benefit from the hardening.
