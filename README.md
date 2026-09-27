@@ -132,3 +132,7 @@ context to non-root/restricted (or set an explicit `fsGroup: 1000`) so any
 volume mounted at `/var/lib/ntfy` stays writable by uid 1000. This is not
 required for the image to run, but leaving it root after switching to a
 non-root image gets no benefit from the hardening.
+
+## License
+
+The build files in this repo are MIT, see `LICENSE`. The bundled `ntfy` binary is the unmodified upstream release, licensed Apache-2.0 by its authors.
