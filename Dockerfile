@@ -7,7 +7,7 @@
 # go-sqlite3), so they run unmodified on musl/alpine.
 #
 # Bump procedure: see README.md "Bump upstream ntfy version".
-ARG NTFY_VERSION=2.28.0
+ARG NTFY_VERSION=2.30.0
 ARG ALPINE_VERSION=3.24.2
 
 # ---- fetch (always native: avoids QEMU for a plain curl+tar+sha256sum) ----
@@ -16,8 +16,8 @@ ARG NTFY_VERSION
 ARG TARGETARCH
 # Update together when NTFY_VERSION bumps - verify against upstream's
 # checksums.txt for the release (see README.md).
-ARG NTFY_SHA256_AMD64=881a1530e30e01f1dec202c7f41e1664e57edfb7844e73e21e345159ac3ea9b7
-ARG NTFY_SHA256_ARM64=18a13411e315ba44781df222c432d27527fc089c2229a994c593beb9c1e247a0
+ARG NTFY_SHA256_AMD64=5b552c33168d9befb9bfd0cb89f0cdb53fc4bdf24d1f3c5e936164c78cc23d65
+ARG NTFY_SHA256_ARM64=e4831dc048cd18529a6beb82a6894968a0c7dfb792aa49e1547d0fbd689ba469
 
 RUN apk add --no-cache curl
 WORKDIR /fetch
