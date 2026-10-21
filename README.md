@@ -1,22 +1,26 @@
 # ntfy-image
 
-Thin in-house repackage of the upstream [ntfy](https://github.com/binwiederhier/ntfy)
-server binary. Published as `ghcr.io/rake-pro/ntfy`, a drop-in replacement for
-`binwiederhier/ntfy`.
+In-house build of the upstream [ntfy](https://github.com/binwiederhier/ntfy)
+server from source. Published as `ghcr.io/rake-pro/ntfy`, a drop-in replacement
+for `binwiederhier/ntfy`.
 
 ## Why this exists
 
 * Upstream `binwiederhier/ntfy:vX.Y.Z` only gets a new alpine base image when
   upstream cuts a release. Alpine/openssl security fixes in between wait on
   their release cadence.
-* This repo builds `alpine:<pinned>` + `apk upgrade --no-cache` + the
-  **unmodified upstream release binary** (sha256-verified), so we can rebuild
-  on our own schedule (weekly Trivy rescan, Dependabot alpine bumps) without
-  waiting on upstream.
-* No source build: upstream's own Linux release binaries are already
-  statically linked (`CGO_ENABLED=1`, `-extldflags=-static`, for
-  `go-sqlite3`), confirmed via `file`/`ldd` against the v2.28.0
-  `linux_amd64` tarball: they run unmodified on musl/alpine.
+* Upstream release binaries are built with whatever Go upstream had at release
+  time (v2.32.0 = go1.27.1), so Go stdlib advisories sat in the image until
+  upstream rebuilt. Since 2026-10-21 this repo compiles ntfy from the upstream
+  source tag (pinned by tag and commit sha) with the pinned `GO_VERSION`, and
+  packages it on `alpine:<pinned>` + `apk upgrade --no-cache`, so both the
+  toolchain and the base move on our schedule (weekly Trivy rescan, Dependabot
+  bumps for every `FROM` image).
+* The build mirrors upstream's `.goreleaser.yml`: `CGO_ENABLED=1` for
+  go-sqlite3, static external link, build tags
+  `sqlite_omit_load_extension,osusergo,netgo`, web UI (`npm run build`) and
+  docs (`mkdocs build`) embedded exactly like the release binary. Cross-compiled
+  per target arch on the native runner (`gcc-aarch64-linux-gnu`), no QEMU.
 
 ## Version scheme
 
@@ -38,7 +42,7 @@ repo.
 
 | Path | Purpose |
 |---|---|
-| `Dockerfile` | Multi-arch (amd64+arm64) build: fetch + verify upstream binary, apk upgrade, non-root runtime |
+| `Dockerfile` | Multi-arch (amd64+arm64) build: source checkout pinned by tag+commit, web + docs stages, static cgo Go build, apk upgrade, non-root runtime |
 | `.github/workflows/ci.yml` | Build-only validation on every `dev` push/PR |
 | `.github/workflows/release.yml` | Mints next semver tag on `main` merge, builds + pushes to GHCR, Trivy-gates |
 | `.github/workflows/sync-main.yml` | Opens the `dev` -> `main` promotion PR |
@@ -69,17 +73,23 @@ curl -s http://localhost:8080/v1/health
 ## How to: bump the upstream ntfy version
 
 1. Check the new release: `gh release view vX.Y.Z --repo binwiederhier/ntfy`
-2. Download its `checksums.txt` and pull the two lines for
-   `ntfy_X.Y.Z_linux_amd64.tar.gz` and `ntfy_X.Y.Z_linux_arm64.tar.gz`.
+2. Resolve the tag to its commit:
+   `gh api repos/binwiederhier/ntfy/git/ref/tags/vX.Y.Z --jq .object.sha`
+   (if `.object.type` is `tag`, dereference once more with
+   `gh api repos/binwiederhier/ntfy/git/tags/<sha> --jq .object.sha`).
 3. In `Dockerfile`, update:
    * `ARG NTFY_VERSION=X.Y.Z`
-   * `ARG NTFY_SHA256_AMD64=<from checksums.txt>`
-   * `ARG NTFY_SHA256_ARM64=<from checksums.txt>`
-4. Build locally (above) to confirm the checksum verification passes and
-   `/v1/health` responds.
+   * `ARG NTFY_COMMIT=<full commit sha>`
+   * `ARG GO_VERSION` if upstream's `.go-version` moved past ours (never go
+     below it), `NODE_VERSION` if upstream's build workflow did.
+4. Build locally (above) to confirm the commit check passes, the web and docs
+   stages still build, and `/v1/health` responds.
 5. Open a PR into `dev`. `check-upstream.yml` opens a tracking issue
    automatically when it notices upstream is ahead; this is the same
    procedure that issue asks for.
+
+A Go toolchain or base-image bump with no upstream change is a patch release of
+this image on its own (that is the point of the source build).
 
 ## How to: release
 
