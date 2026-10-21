@@ -1,38 +1,79 @@
 # syntax=docker/dockerfile:1
 
-# Thin repackage of the upstream ntfy release binary: current alpine base +
-# `apk upgrade --no-cache` + the pinned upstream linux tarball, sha256-verified
-# against upstream's checksums.txt. No source build - upstream's own release
-# binaries are statically linked (CGO_ENABLED=1, -extldflags=-static, for
-# go-sqlite3), so they run unmodified on musl/alpine.
+# ntfy built from upstream source with the current Go toolchain, on a current
+# alpine base with `apk upgrade --no-cache`.
 #
-# Bump procedure: see README.md "Bump upstream ntfy version".
+# Why a source build (2026-10-21): upstream's release binaries are built with
+# whatever Go upstream had at release time (v2.32.0 = go1.27.1), so every Go
+# stdlib advisory sat in the image until upstream rebuilt. Compiling here with
+# the pinned GO_VERSION decouples the two. The build mirrors upstream's
+# .goreleaser.yml exactly: CGO_ENABLED=1 for go-sqlite3, static external link,
+# tags sqlite_omit_load_extension,osusergo,netgo, web UI and docs embedded via
+# //go:embed (server/site, server/docs). Source is pinned by tag AND commit sha.
+#
+# Bump procedure: see README.md "How to: bump the upstream ntfy version".
 ARG NTFY_VERSION=2.32.0
+ARG NTFY_COMMIT=9d0b6d933d6a6ddc5265bfecadaec1fb1538d89b
+ARG GO_VERSION=1.27.3
+ARG NODE_VERSION=24
+ARG PYTHON_VERSION=3.13
 ARG ALPINE_VERSION=3.24.2
 
-# ---- fetch (always native: avoids QEMU for a plain curl+tar+sha256sum) ----
-FROM --platform=$BUILDPLATFORM alpine:${ALPINE_VERSION} AS fetch
+# ---- source checkout (native; verified against the pinned commit) ----
+FROM --platform=$BUILDPLATFORM alpine:${ALPINE_VERSION} AS src
 ARG NTFY_VERSION
-ARG TARGETARCH
-# Update together when NTFY_VERSION bumps - verify against upstream's
-# checksums.txt for the release (see README.md).
-ARG NTFY_SHA256_AMD64=681819773a69079c0efdd64c096cc2149d9290243feb3e31dd3ef04a2c85f1ed
-ARG NTFY_SHA256_ARM64=408c34d833f5fa7cc1a05b8fa43ea6f2b78a42bd8ea2f9248bc728e78b90a891
+ARG NTFY_COMMIT
+RUN apk add --no-cache git
+WORKDIR /src
+RUN set -eu; \
+    git clone -q --depth 1 --branch "v${NTFY_VERSION}" https://github.com/binwiederhier/ntfy .; \
+    head="$(git rev-parse HEAD)"; \
+    [ "${head}" = "${NTFY_COMMIT}" ] || { echo "tag v${NTFY_VERSION} is ${head}, expected ${NTFY_COMMIT}" >&2; exit 1; }; \
+    rm -rf .git
 
-RUN apk add --no-cache curl
-WORKDIR /fetch
+# ---- web UI (native; upstream Makefile `web-build`) ----
+FROM --platform=$BUILDPLATFORM node:${NODE_VERSION}-alpine AS web
+COPY --from=src /src/web /src/web
+WORKDIR /src/web
+RUN set -eu; \
+    npm ci --no-audit --no-fund; \
+    npm run build; \
+    mv build/index.html build/app.html; \
+    rm -f build/config.js
+
+# ---- docs site (native; upstream Makefile `docs-build`) ----
+FROM --platform=$BUILDPLATFORM python:${PYTHON_VERSION}-slim AS docs
+COPY --from=src /src /src
+WORKDIR /src
+RUN set -eu; \
+    pip install --no-cache-dir -r requirements.txt; \
+    python -m mkdocs build -d /out/docs
+
+# ---- Go build (native host toolchain, cross-compiled per TARGETARCH) ----
+FROM --platform=$BUILDPLATFORM golang:${GO_VERSION}-bookworm AS build
+ARG TARGETARCH
+ARG NTFY_VERSION
+ARG NTFY_COMMIT
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends gcc-aarch64-linux-gnu libc6-dev-arm64-cross \
+ && rm -rf /var/lib/apt/lists/*
+COPY --from=src /src /src
+COPY --from=web /src/web/build /src/server/site
+COPY --from=docs /out/docs /src/server/docs
+WORKDIR /src
+RUN go mod download
 RUN set -eu; \
     case "${TARGETARCH}" in \
-      amd64) sha256="${NTFY_SHA256_AMD64}" ;; \
-      arm64) sha256="${NTFY_SHA256_ARM64}" ;; \
+      amd64) CC=gcc ;; \
+      arm64) CC=aarch64-linux-gnu-gcc ;; \
       *) echo "unsupported TARGETARCH=${TARGETARCH}" >&2; exit 1 ;; \
     esac; \
-    file="ntfy_${NTFY_VERSION}_linux_${TARGETARCH}.tar.gz"; \
-    url="https://github.com/binwiederhier/ntfy/releases/download/v${NTFY_VERSION}/${file}"; \
-    curl -fsSL -o "${file}" "${url}"; \
-    echo "${sha256}  ${file}" | sha256sum -c -; \
-    tar -xzf "${file}" --strip-components=1 "ntfy_${NTFY_VERSION}_linux_${TARGETARCH}/ntfy"; \
-    chmod 0755 ntfy
+    CGO_ENABLED=1 GOOS=linux GOARCH="${TARGETARCH}" CC="${CC}" \
+    go build -trimpath \
+      -tags sqlite_omit_load_extension,osusergo,netgo \
+      -ldflags "-linkmode=external -extldflags=-static -s -w -X main.version=${NTFY_VERSION} -X main.commit=${NTFY_COMMIT} -X main.date=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      -o /out/ntfy .; \
+    go version -m /out/ntfy | head -3
 
 # ---- runtime ----
 FROM alpine:${ALPINE_VERSION}
@@ -44,7 +85,7 @@ RUN apk upgrade --no-cache && \
     rm -rf /var/cache/apk/*
 
 LABEL org.opencontainers.image.title="ntfy" \
-      org.opencontainers.image.description="Rake-Pro thin repackage of the upstream ntfy release binary (current alpine + apk upgrade)" \
+      org.opencontainers.image.description="Rake-Pro build of upstream ntfy from source with the current Go toolchain (current alpine + apk upgrade)" \
       org.opencontainers.image.source="https://github.com/Rake-Pro/ntfy-image" \
       org.opencontainers.image.licenses="Apache-2.0" \
       io.rake-pro.upstream-project="https://github.com/binwiederhier/ntfy" \
@@ -56,7 +97,7 @@ LABEL org.opencontainers.image.title="ntfy" \
 RUN adduser -D -u 1000 ntfy
 USER ntfy
 
-COPY --from=fetch --chown=1000:1000 /fetch/ntfy /usr/bin/ntfy
+COPY --from=build --chown=1000:1000 /out/ntfy /usr/bin/ntfy
 
 # Upstream default listen-http is :80 (needs root); this image runs as uid
 # 1000, so any deployment must set NTFY_LISTEN_HTTP to an unprivileged port
