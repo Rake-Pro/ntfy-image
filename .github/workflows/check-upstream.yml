@@ -49,4 +49,4 @@ jobs:
 
           gh issue create --repo "${GITHUB_REPOSITORY}" \
             --title "${title}" \
-            --body "$(printf 'Upstream binwiederhier/ntfy released v%s (currently pinned: v%s).\n\nSee README.md "Bump upstream ntfy version" for the steps: update ARG NTFY_VERSION and the two NTFY_SHA256_* build args in Dockerfile against upstream'"'"'s checksums.txt for the release, then open a PR to dev.\n\nRelease notes: https://github.com/binwiederhier/ntfy/releases/tag/v%s' "${latest}" "${pinned}" "${latest}")"
+            --body "$(printf 'Upstream binwiederhier/ntfy released v%s (currently pinned: v%s).\n\nSee README.md "Bump upstream ntfy version" for the steps: update ARG NTFY_VERSION and ARG NTFY_COMMIT (the tag'"'"'s commit sha) in Dockerfile, then open a PR to dev.\n\nRelease notes: https://github.com/binwiederhier/ntfy/releases/tag/v%s' "${latest}" "${pinned}" "${latest}")"

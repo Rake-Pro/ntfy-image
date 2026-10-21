@@ -2,28 +2,9 @@
 # ignore-unfixed). Every entry is scoped to a file and expires; when an entry
 # expires the scan fails again and the bump must be real.
 #
-# ntfy is an unmodified upstream release binary (sha256-verified), not code we
-# compile, so a Go stdlib finding needs upstream to rebuild with a fixed
-# toolchain. v2.30.0 (2026-10-12) cleared the x/net finding of v2.28.0 but is
-# still built with go1.27.1, and so are v2.31.1 (2026-10-17) and v2.32.0
-# (2026-10-18; checked with `go version -m` on 2026-10-19: go1.27.1, x/net
-# 0.61.0, x/text 0.43.0). The
-# three entries below are the stdlib advisories fixed in go1.26.9 / go1.27.2.
-# Re-check `go version -m ntfy` on each upstream release and drop the entries
-# when it reports go >= 1.27.2.
-vulnerabilities:
-  - id: CVE-2026-78667
-    paths:
-      - usr/bin/ntfy
-    statement: "Prebuilt upstream ntfy at newest stable release (v2.32.0, built with go1.27.1); stdlib fix needs an upstream rebuild with go >= 1.27.2. Bump NTFY_VERSION and drop this entry, do not renew."
-    expired_at: 2026-11-30
-  - id: CVE-2026-78669
-    paths:
-      - usr/bin/ntfy
-    statement: "Prebuilt upstream ntfy at newest stable release (v2.32.0, built with go1.27.1, x/net 0.61.0); stdlib fix needs an upstream rebuild with go >= 1.27.2. Bump NTFY_VERSION and drop this entry, do not renew."
-    expired_at: 2026-11-30
-  - id: CVE-2026-97031
-    paths:
-      - usr/bin/ntfy
-    statement: "Prebuilt upstream ntfy at newest stable release (v2.32.0, built with go1.27.1); stdlib fix needs an upstream rebuild with go >= 1.27.2. Bump NTFY_VERSION and drop this entry, do not renew."
-    expired_at: 2026-11-30
+# Since 2026-10-21 ntfy is compiled here from upstream source with the pinned
+# GO_VERSION (Dockerfile), so a Go stdlib or x/* finding is fixed by bumping
+# GO_VERSION or the upstream version, not by an ignore entry. The three
+# go1.27.1 stdlib entries that covered the prebuilt v2.30.0-v2.32.0 binaries
+# were dropped with that change.
+vulnerabilities: []
