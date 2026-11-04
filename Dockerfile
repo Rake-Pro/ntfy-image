@@ -12,12 +12,12 @@
 # //go:embed (server/site, server/docs). Source is pinned by tag AND commit sha.
 #
 # Bump procedure: see README.md "How to: bump the upstream ntfy version".
-ARG NTFY_VERSION=2.32.0
-ARG NTFY_COMMIT=9d0b6d933d6a6ddc5265bfecadaec1fb1538d89b
+ARG NTFY_VERSION=2.37.2
+ARG NTFY_COMMIT=05109571fd0931affb6f92b17bbfd62c4d2ea68a
 ARG GO_VERSION=1.27.3
 ARG NODE_VERSION=24
 ARG PYTHON_VERSION=3.13
-ARG ALPINE_VERSION=3.24.2
+ARG ALPINE_VERSION=3.24.3
 
 # ---- source checkout (native; verified against the pinned commit) ----
 FROM --platform=$BUILDPLATFORM alpine:${ALPINE_VERSION} AS src
