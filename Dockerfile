@@ -95,6 +95,11 @@ LABEL org.opencontainers.image.title="ntfy" \
 # (NTFY_CACHE_FILE / NTFY_AUTH_FILE parent dir) - see GitOps values before
 # rolling this out (fsGroup / runAsUser must match).
 RUN adduser -D -u 1000 ntfy
+# No Multipath TCP listeners: nothing on the fleet dials MPTCP, and a listening MPTCP
+# socket was the precondition of the CVE-2026-98432 host-kernel exploit. Upstream go.mod
+# is not ours to edit, so the opt-out is a runtime GODEBUG instead of a godebug directive.
+ENV GODEBUG=multipathtcp=0
+
 USER ntfy
 
 COPY --from=build --chown=1000:1000 /out/ntfy /usr/bin/ntfy
