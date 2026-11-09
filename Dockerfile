@@ -61,6 +61,9 @@ COPY --from=src /src /src
 COPY --from=web /src/web/build /src/server/site
 COPY --from=docs /out/docs /src/server/docs
 WORKDIR /src
+# Module bumps on top of the upstream go.mod: upstream 2.37.2 still pins x/net 0.61.0
+# (GO-2026-6860 / GO-2026-6866 in x/net/html). Drop the line once upstream catches up.
+RUN go get golang.org/x/net@v0.62.0 && go mod tidy
 RUN go mod download
 RUN set -eu; \
     case "${TARGETARCH}" in \
